@@ -1,0 +1,26 @@
+# Allowlist: local datasets, histories, credentials, caches and evidence never
+# enter the build context. Only the standalone application and fixtures do.
+**
+!Dockerfile
+!pyproject.toml
+!uv.lock
+!README.md
+!README.zh-CN.md
+!SETUP.md
+!LICENSE
+!scripts/
+scripts/**
+!scripts/setup.sh
+!scripts/setup-packages.sh
+!src/
+!src/**
+!manifests/
+manifests/**
+!manifests/calibration/
+!manifests/calibration/**
+!tests/
+tests/**
+!tests/calibration/
+!tests/calibration/**
+**/__pycache__/
+**/*.pyc

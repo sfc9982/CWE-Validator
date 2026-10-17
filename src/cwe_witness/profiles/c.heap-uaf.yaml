@@ -1,0 +1,12 @@
+schema_version: '1.0'
+profile_id: c.heap-uaf
+version: 1.0.0
+cwe_id: CWE-416
+mechanism: heap_use_after_free
+control_required: false
+required_predicates:
+  - valid_program_execution
+  - complete_runtime_report
+  - target_mechanism_observed
+  - allocation_release_access_associated
+  - target_code_attributed

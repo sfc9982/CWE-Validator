@@ -1,0 +1,17 @@
+schema_version: '1.0'
+profile_id: c.classic-buffer-overflow
+version: 1.0.0
+cwe_id: CWE-120
+mechanism: out_of_bounds
+operation: write
+observer: asan
+build_preset: clang-asan-copy-debug
+control_required: false
+required_predicates:
+  - valid_program_execution
+  - complete_runtime_report
+  - target_mechanism_observed
+  - access_direction_matches
+  - object_boundary_exceeded
+  - copy_operation_observed
+  - target_code_attributed

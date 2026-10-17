@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "sample_id": "calibration-cwe772-trigger",
+  "sources": [
+    "../../tests/calibration/fd_resources.c"
+  ],
+  "claimed_cwe": "CWE-772",
+  "profile": "c.posix-resource-release@1.0.0",
+  "entry": {
+    "scope": "program",
+    "argv": [
+      "file-leak"
+    ],
+    "stdin": ""
+  },
+  "build": {
+    "language": "c",
+    "standard": "c11",
+    "preset": "clang-debug"
+  },
+  "replay": {
+    "count": 2
+  },
+  "control": {
+    "sources": [
+      "../../tests/calibration/fd_resources_control.c"
+    ],
+    "review_note": "Release the same file descriptor after opening it, then exit successfully.",
+    "expected_stdout": ""
+  }
+}

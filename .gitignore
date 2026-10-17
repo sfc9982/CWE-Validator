@@ -1,0 +1,56 @@
+# Python environments and caches
+.venv*/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache*/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Build, evidence and local validation output
+.cwe-witness/
+.setup-state/
+.audit/
+.deps/
+.tools/
+build/
+dist/
+outputs/
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+*.pdb
+
+# User-supplied corpora, catalogs, archives and office exports
+VUL*/
+corpora/
+datasets/
+research/
+699.csv
+*.zip
+*.tar
+*.tar.gz
+*.xlsx
+*.pptx
+
+# Local secrets and editor/agent state
+.env
+.env.*
+!.env.example
+.aws/
+.codex/
+.agents/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

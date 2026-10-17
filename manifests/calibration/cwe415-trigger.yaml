@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "sample_id": "calibration-cwe415-trigger",
+  "sources": [
+    "../../tests/calibration/memory.c"
+  ],
+  "claimed_cwe": "CWE-415",
+  "profile": "c.heap-double-free@1.0.0",
+  "entry": {
+    "scope": "program",
+    "argv": [
+      "double",
+      "0"
+    ],
+    "stdin": ""
+  },
+  "build": {
+    "preset": "clang-asan-recover-debug"
+  },
+  "replay": {
+    "count": 2
+  }
+}

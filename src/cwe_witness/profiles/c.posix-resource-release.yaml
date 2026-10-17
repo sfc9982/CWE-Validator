@@ -1,0 +1,15 @@
+schema_version: '1.0'
+profile_id: c.posix-resource-release
+version: 1.0.0
+cwe_id: CWE-772
+mechanism: posix_fd_leak
+operation: open
+observer: valgrind-fd
+build_preset: clang-debug
+control_required: false
+required_predicates:
+  - valid_program_execution
+  - complete_runtime_report
+  - target_mechanism_observed
+  - resource_still_open_at_exit
+  - target_code_attributed

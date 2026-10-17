@@ -1,0 +1,18 @@
+schema_version: '1.0'
+profile_id: c.oob-read
+version: 1.0.0
+cwe_id: CWE-125
+mechanism: out_of_bounds
+operation: read
+observer: asan-bounds
+build_preset: clang-asan-bounds-debug
+compatible_build_presets:
+  - clang-asan-debug
+control_required: false
+required_predicates:
+  - valid_program_execution
+  - complete_runtime_report
+  - target_mechanism_observed
+  - access_direction_matches
+  - object_boundary_exceeded
+  - target_code_attributed

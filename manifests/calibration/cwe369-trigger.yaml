@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "sample_id": "calibration-cwe369-trigger",
+  "sources": [
+    "../../tests/calibration/arithmetic.c"
+  ],
+  "claimed_cwe": "CWE-369",
+  "profile": "c.divide-by-zero@1.0.0",
+  "entry": {
+    "scope": "program",
+    "argv": [
+      "divide"
+    ],
+    "stdin": "0\n6\n"
+  },
+  "replay": {
+    "count": 2
+  },
+  "build": {
+    "preset": "clang-ubsan-float-debug"
+  }
+}

@@ -1,0 +1,13 @@
+schema_version: '1.0'
+profile_id: c.integer-overflow
+version: 1.0.0
+cwe_id: CWE-190
+mechanism: integer_overflow
+observer: ubsan
+build_preset: clang-ubsan-debug
+control_required: false
+required_predicates:
+  - valid_program_execution
+  - complete_runtime_report
+  - target_mechanism_observed
+  - target_code_attributed

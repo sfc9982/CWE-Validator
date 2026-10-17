@@ -1,0 +1,15 @@
+schema_version: '1.0'
+profile_id: c.heap-double-free
+version: 1.0.0
+cwe_id: CWE-415
+mechanism: heap_double_free
+operation: free
+observer: asan
+build_preset: clang-asan-recover-debug
+control_required: false
+required_predicates:
+  - valid_program_execution
+  - complete_runtime_report
+  - target_mechanism_observed
+  - allocation_release_access_associated
+  - target_code_attributed

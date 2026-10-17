@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "sample_id": "calibration-cwe191-trigger",
+  "sources": [
+    "../../tests/calibration/arithmetic.c"
+  ],
+  "claimed_cwe": "CWE-191",
+  "profile": "c.integer-underflow@1.0.0",
+  "entry": {
+    "scope": "program",
+    "argv": [
+      "underflow"
+    ],
+    "stdin": "1025\n"
+  },
+  "replay": {
+    "count": 2
+  },
+  "build": {
+    "preset": "clang-ubsan-debug"
+  }
+}

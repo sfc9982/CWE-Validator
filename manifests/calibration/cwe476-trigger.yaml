@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "sample_id": "calibration-cwe476-trigger",
+  "sources": [
+    "../../tests/calibration/arithmetic.c"
+  ],
+  "claimed_cwe": "CWE-476",
+  "profile": "c.null-pointer-dereference@1.0.0",
+  "entry": {
+    "scope": "program",
+    "argv": [
+      "null"
+    ],
+    "stdin": "18446744073709551615\n"
+  },
+  "replay": {
+    "count": 2
+  },
+  "build": {
+    "preset": "clang-ubsan-debug"
+  }
+}

@@ -1,0 +1,140 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install system tools
+        run: |
+          bash scripts/setup.sh --yes --system-only
+      - name: Install uv and project dependencies
+        run: |
+          python -m pip install uv
+          uv sync --locked --all-groups
+      - name: Check shell scripts
+        run: |
+          sudo apt-get install -y shellcheck
+          bash -n scripts/setup.sh scripts/setup-packages.sh scripts/setup-ubuntu.sh scripts/docker.sh
+          shellcheck scripts/setup.sh scripts/setup-packages.sh scripts/setup-ubuntu.sh scripts/docker.sh
+      - name: Lint, format, and type check
+        run: |
+          uv run ruff check src tests
+          uv run ruff format --check src tests
+          uv run mypy src
+      - name: Run tests
+        run: uv run pytest -q
+      - name: Exercise installed project workflows
+        run: |
+          uv run cweverify doctor
+          for manifest in manifests/calibration/*.yaml; do
+            uv run cweverify validate "$manifest"
+          done
+          uv run cweverify run manifests/calibration/cwe416-trigger.yaml --output .cwe-witness/smoke-positive
+          uv run cweverify run manifests/calibration/cwe125-normal.yaml --output .cwe-witness/smoke-negative
+          uv run cweverify batch --jobs 1 --output .cwe-witness/batch
+          python - <<'PYCODE'
+          import json
+          from pathlib import Path
+
+          def decision(directory):
+              result = next(Path(directory).rglob("result.json"))
+              return json.loads(result.read_text())["decision"]["status"]
+
+          assert decision(".cwe-witness/smoke-positive") == "CONFIRMED"
+          assert decision(".cwe-witness/smoke-negative") == "NOT_CONFIRMED"
+          rows = json.loads(Path(".cwe-witness/batch/summary.json").read_text())
+          assert rows and all(row["status"] != "ERROR" for row in rows)
+          assert {row["status"] for row in rows} >= {"CONFIRMED", "NOT_CONFIRMED"}
+          PYCODE
+      - name: Build distributions
+        run: uv build
+      - name: Check wheel contents
+        run: |
+          python - <<'PYCODE'
+          from pathlib import Path
+          from zipfile import ZipFile
+          from tarfile import open as open_tar
+
+          wheel = next(Path("dist").glob("*.whl"))
+          with ZipFile(wheel) as archive:
+              names = archive.namelist()
+          profiles = [name for name in names if name.startswith("cwe_witness/profiles/") and name.endswith(".yaml")]
+          assert len(profiles) == 12, profiles
+          assert any(name.endswith("/licenses/LICENSE") for name in names)
+          forbidden = ("outputs/", ".venv", "VUL", ".deps/", ".audit/", ".setup-state/", ".cwe-witness/", "source_stdin_matrix", "699.csv", "__pycache__")
+          assert not any(marker in name for marker in forbidden for name in names)
+          source_archive = next(Path("dist").glob("*.tar.gz"))
+          with open_tar(source_archive, "r:gz") as archive:
+              source_names = archive.getnames()
+          assert not any(marker in name for marker in forbidden for name in source_names)
+          PYCODE
+      - name: Smoke-test installed wheel
+        run: |
+          python -m venv /tmp/cwe-witness-wheel
+          /tmp/cwe-witness-wheel/bin/python -m pip install dist/*.whl
+          cd /tmp
+          /tmp/cwe-witness-wheel/bin/cweverify --help
+
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["ubuntu:24.04", "debian:bookworm", "fedora:latest", "rockylinux:9", "archlinux:base"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise native distribution package installation
+        env:
+          TEST_IMAGE: ${{ matrix.image }}
+        run: |
+          docker run --rm --env STATE_DIR=/tmp/cwe-setup-state \
+            --volume "$PWD:/project:ro" "$TEST_IMAGE" \
+            bash /project/scripts/setup.sh --yes --system-only --force
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build standalone image
+        run: bash scripts/docker.sh build
+      - name: Check runtime and calibration evidence
+        run: |
+          bash scripts/docker.sh run doctor
+          bash scripts/docker.sh run validate manifests/calibration/cwe416-trigger.yaml
+          bash scripts/docker.sh run run manifests/calibration/cwe416-trigger.yaml --output .cwe-witness/docker-positive
+          bash scripts/docker.sh run run manifests/calibration/cwe125-normal.yaml --output .cwe-witness/docker-negative
+          python3 - <<'PYCODE'
+          import json
+          from pathlib import Path
+
+          for directory, expected in [("docker-positive", "CONFIRMED"), ("docker-negative", "NOT_CONFIRMED")]:
+              result = next((Path(".cwe-witness") / directory).rglob("result.json"))
+              assert json.loads(result.read_text())["decision"]["status"] == expected
+          PYCODE
+      - name: Exercise nested path observer with explicit permissions
+        run: |
+          bash scripts/docker.sh run --full-isolation run manifests/calibration/cwe22-trigger.yaml --output .cwe-witness/docker-path
+          python3 - <<'PYCODE'
+          import json
+          from pathlib import Path
+
+          result = next(Path(".cwe-witness/docker-path").rglob("result.json"))
+          assert json.loads(result.read_text())["decision"]["status"] == "CONFIRMED"
+          PYCODE

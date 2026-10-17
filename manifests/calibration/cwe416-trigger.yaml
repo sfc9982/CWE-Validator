@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "sample_id": "calibration-cwe416-trigger",
+  "sources": [
+    "../../tests/calibration/memory.c"
+  ],
+  "claimed_cwe": "CWE-416",
+  "profile": "c.heap-uaf@1.0.0",
+  "entry": {
+    "scope": "program",
+    "argv": [
+      "uaf",
+      "0"
+    ],
+    "stdin": ""
+  },
+  "replay": {
+    "count": 2
+  },
+  "control": {
+    "sources": [
+      "../../tests/calibration/uaf_control.c"
+    ],
+    "review_note": "Read the allocated value before release, preserving the value printed and successful exit.",
+    "expected_stdout": "7"
+  }
+}

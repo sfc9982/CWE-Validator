@@ -1,0 +1,13 @@
+schema_version: '1.0'
+profile_id: c.divide-by-zero
+version: 1.0.0
+cwe_id: CWE-369
+mechanism: divide_by_zero
+observer: ubsan
+build_preset: clang-ubsan-float-debug
+control_required: false
+required_predicates:
+  - valid_program_execution
+  - complete_runtime_report
+  - target_mechanism_observed
+  - target_code_attributed

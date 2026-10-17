@@ -1,0 +1,14 @@
+schema_version: '1.0'
+profile_id: c.oob-write
+version: 1.0.0
+cwe_id: CWE-787
+mechanism: out_of_bounds
+operation: write
+control_required: false
+required_predicates:
+  - valid_program_execution
+  - complete_runtime_report
+  - target_mechanism_observed
+  - access_direction_matches
+  - object_boundary_exceeded
+  - target_code_attributed
