@@ -28,15 +28,39 @@ class SetupTests(unittest.TestCase):
             ("debian", "", "12", "apt", "python3-venv", "libclang-rt-dev", "curl"),
             ("linuxmint", "ubuntu debian", "22", "apt", "python3-venv", "libclang-rt-dev", "curl"),
             ("fedora", "", "43", "dnf", "python3", "compiler-rt", "curl"),
-            ("rocky", "rhel centos fedora", "9.6", "dnf", "python3.11", "compiler-rt", "curl-minimal"),
-            ("almalinux", "rhel centos fedora", "9.6", "dnf", "python3.11", "compiler-rt", "curl-minimal"),
+            (
+                "rocky",
+                "rhel centos fedora",
+                "9.6",
+                "dnf",
+                "python3.11",
+                "compiler-rt",
+                "curl-minimal",
+            ),
+            (
+                "almalinux",
+                "rhel centos fedora",
+                "9.6",
+                "dnf",
+                "python3.11",
+                "compiler-rt",
+                "curl-minimal",
+            ),
             ("rhel", "fedora", "9.6", "dnf", "python3.11", "compiler-rt", "curl-minimal"),
             ("arch", "", "rolling", "pacman", "python", "compiler-rt", "curl"),
             ("manjaro", "arch", "rolling", "pacman", "python", "compiler-rt", "curl"),
         ]
         with tempfile.TemporaryDirectory() as tmp:
             release = Path(tmp) / "os-release"
-            for distro, like, version, manager, python_package, runtime, curl_package in distributions:
+            for (
+                distro,
+                like,
+                version,
+                manager,
+                python_package,
+                runtime,
+                curl_package,
+            ) in distributions:
                 with self.subTest(distro=distro):
                     release.write_text(f'ID={distro}\nID_LIKE="{like}"\nVERSION_ID={version}\n')
                     result = self.bash(
