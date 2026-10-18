@@ -156,6 +156,7 @@ class SetupTests(unittest.TestCase):
                     self.assertIn("none", argv)
                     self.assertIn(f"type=bind,source={inputs},target=/inputs,readonly", argv)
                     self.assertEqual("SYS_ADMIN" in argv, full)
+                    self.assertEqual("NET_ADMIN" in argv, full)
                     self.assertEqual("seccomp=unconfined" in argv, full)
                     self.assertNotIn("--privileged", argv)
                     self.assertEqual(argv[-2:], ["validate", "/inputs/case.yaml"])

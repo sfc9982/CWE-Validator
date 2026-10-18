@@ -42,7 +42,7 @@ output="$(cd -- "${output}" && pwd -P)"
 args=(run --rm --network none --pids-limit 256
     --mount "type=bind,source=${output},target=/opt/cwe-witness/.cwe-witness")
 if [[ ${full} -eq 1 ]]; then
-    args+=(--user 0:0 --cap-add SYS_ADMIN --cap-add SYS_PTRACE
+    args+=(--user 0:0 --cap-add SYS_ADMIN --cap-add SYS_PTRACE --cap-add NET_ADMIN
         --security-opt seccomp=unconfined --security-opt apparmor=unconfined)
 else
     args+=(--user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges=true)
