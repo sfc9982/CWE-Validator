@@ -37,12 +37,13 @@ select_system_packages() {
             ;;
         dnf|yum)
             SYSTEM_PACKAGES=(gcc gcc-c++ make clang llvm compiler-rt valgrind
-                openssl-devel pkgconf-pkg-config bubblewrap strace curl ca-certificates git)
+                openssl-devel pkgconf-pkg-config bubblewrap strace ca-certificates git)
             # Enterprise Linux 9 defaults to Python 3.9. Its 3.11 suite is separate.
             if [[ " ${DISTRO_ID} ${DISTRO_LIKE} " == *' rhel '* || ${DISTRO_ID} == centos || ${DISTRO_ID} == rocky || ${DISTRO_ID} == almalinux ]]; then
-                SYSTEM_PACKAGES+=(python3.11 python3.11-pip)
+                # EL9 images often preinstall curl-minimal, which conflicts with curl.
+                SYSTEM_PACKAGES+=(python3.11 python3.11-pip curl-minimal)
             else
-                SYSTEM_PACKAGES+=(python3 python3-pip)
+                SYSTEM_PACKAGES+=(python3 python3-pip curl)
             fi
             ;;
         pacman)

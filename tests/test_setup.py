@@ -24,19 +24,19 @@ class SetupTests(unittest.TestCase):
 
     def test_distribution_package_plans(self):
         distributions = [
-            ("ubuntu", "debian", "24.04", "apt", "python3-venv", "libclang-rt-dev"),
-            ("debian", "", "12", "apt", "python3-venv", "libclang-rt-dev"),
-            ("linuxmint", "ubuntu debian", "22", "apt", "python3-venv", "libclang-rt-dev"),
-            ("fedora", "", "43", "dnf", "python3", "compiler-rt"),
-            ("rocky", "rhel centos fedora", "9.6", "dnf", "python3.11", "compiler-rt"),
-            ("almalinux", "rhel centos fedora", "9.6", "dnf", "python3.11", "compiler-rt"),
-            ("rhel", "fedora", "9.6", "dnf", "python3.11", "compiler-rt"),
-            ("arch", "", "rolling", "pacman", "python", "compiler-rt"),
-            ("manjaro", "arch", "rolling", "pacman", "python", "compiler-rt"),
+            ("ubuntu", "debian", "24.04", "apt", "python3-venv", "libclang-rt-dev", "curl"),
+            ("debian", "", "12", "apt", "python3-venv", "libclang-rt-dev", "curl"),
+            ("linuxmint", "ubuntu debian", "22", "apt", "python3-venv", "libclang-rt-dev", "curl"),
+            ("fedora", "", "43", "dnf", "python3", "compiler-rt", "curl"),
+            ("rocky", "rhel centos fedora", "9.6", "dnf", "python3.11", "compiler-rt", "curl-minimal"),
+            ("almalinux", "rhel centos fedora", "9.6", "dnf", "python3.11", "compiler-rt", "curl-minimal"),
+            ("rhel", "fedora", "9.6", "dnf", "python3.11", "compiler-rt", "curl-minimal"),
+            ("arch", "", "rolling", "pacman", "python", "compiler-rt", "curl"),
+            ("manjaro", "arch", "rolling", "pacman", "python", "compiler-rt", "curl"),
         ]
         with tempfile.TemporaryDirectory() as tmp:
             release = Path(tmp) / "os-release"
-            for distro, like, version, manager, python_package, runtime in distributions:
+            for distro, like, version, manager, python_package, runtime, curl_package in distributions:
                 with self.subTest(distro=distro):
                     release.write_text(f'ID={distro}\nID_LIKE="{like}"\nVERSION_ID={version}\n')
                     result = self.bash(
@@ -53,6 +53,9 @@ class SetupTests(unittest.TestCase):
                     self.assertEqual(packages[0], manager)
                     self.assertIn(python_package, packages)
                     self.assertIn(runtime, packages)
+                    self.assertIn(curl_package, packages)
+                    if curl_package == "curl-minimal":
+                        self.assertNotIn("curl", packages)
 
     def test_help_and_dry_run_leave_no_state(self):
         with tempfile.TemporaryDirectory() as tmp:
