@@ -17,7 +17,19 @@ from .adapters.valgrind_fd import parse_valgrind_fd, report_complete
 from .compiler import compile_sources
 from .judging import judge
 from .manifest import catalog_entry, digest, load_manifest
-from .models import Build, Decision, DerivedFact, Finding, Manifest, Observation, Result, Run
+from .models import (
+    Build,
+    BuildConfig,
+    Decision,
+    DerivedFact,
+    Finding,
+    Manifest,
+    Observation,
+    Result,
+    Run,
+)
+from .observation_plan import build_observation_plan
+from .path_discovery import infer_path_policy
 from .profiles import load_profile
 from .reporting import save
 from .runner import run_binary
@@ -61,6 +73,7 @@ def signature(observations: list[Observation]) -> str:
                 "path_raw": o.path_raw,
                 "path_resolved": o.path_resolved,
                 "path_allowed_root": o.path_allowed_root,
+                "path_boundary_source": o.path_boundary_source,
                 "path_syscall": o.path_syscall,
             }
             for o in observations
@@ -210,7 +223,10 @@ def _parse_observations(
             *parse_null_contract(run, sources),
         ]
     if observer == "path-trace":
-        return parse_path_trace(run, sources, manifest.path_policy)
+        policy = manifest.path_policy
+        if policy is None and manifest.observation_mode == "adaptive":
+            policy, _, _ = infer_path_policy(sources)
+        return parse_path_trace(run, sources, policy)
     if observer == "resource-lifecycle":
         return parse_resource_lifecycle(run, sources, manifest.resource_lifecycle)
     return []
@@ -235,6 +251,25 @@ def _control_observer_ok(observer: str, run: Run) -> bool:
     return False
 
 
+_SUPPLEMENTAL_BUILDS = {
+    "asan": "clang-asan-debug",
+    "asan-bounds": "clang-asan-bounds-debug",
+    "ubsan": "clang-ubsan-float-debug",
+    "path-trace": "clang-debug",
+    "valgrind-fd": "clang-debug",
+    "resource-lifecycle": "clang-debug",
+}
+
+_SUPPLEMENTAL_TOOLS = {
+    "asan": (),
+    "asan-bounds": (),
+    "ubsan": (),
+    "path-trace": ("strace", "bwrap"),
+    "valgrind-fd": ("valgrind",),
+    "resource-lifecycle": ("valgrind",),
+}
+
+
 def snapshot(sources: list[str], base: Path, destination: Path) -> list[str]:
     destination.mkdir(parents=True)
     names = [Path(s).name for s in sources]
@@ -245,11 +280,26 @@ def snapshot(sources: list[str], base: Path, destination: Path) -> list[str]:
     return [str(destination / name) for name in names]
 
 
+def _previous_environment(previous: Result | None, run_id: str) -> dict[str, str] | None:
+    if not previous:
+        return None
+    run = next((item for item in previous.runs if item.run_id == run_id), None)
+    return run.environment if run else None
+
+
 def verify(path: Path, output: Path, catalog: Path, previous: Result | None = None) -> Result:
     directory = (output / uuid.uuid4().hex).resolve()
     directory.mkdir(parents=True)
     manifest = previous.manifest.model_copy(deep=True) if previous else load_manifest(path)
     profile = load_profile(manifest.profile)
+    if (
+        profile
+        and profile.observer == "path-trace"
+        and manifest.path_policy is None
+        and manifest.observation_mode == "adaptive"
+    ):
+        manifest.path_policy, _, evidence = infer_path_policy(manifest.sources)
+        manifest.path_policy.inference_evidence = evidence
     if profile and profile.cwe_id != manifest.claimed_cwe:
         raise ValueError("profile CWE does not match claimed_cwe")
     result = Result(
@@ -268,6 +318,21 @@ def verify(path: Path, output: Path, catalog: Path, previous: Result | None = No
     if not profile:
         save(result)
         return result
+    observation_plan = (
+        previous.observation_plan.model_copy(deep=True)
+        if previous and previous.observation_plan
+        else build_observation_plan(
+            manifest.sources,
+            profile,
+            manifest.observation_mode,
+            manifest.max_supplemental_runs,
+        )
+    )
+    for candidate in observation_plan.candidates:
+        candidate.execution_status = "unknown"
+        candidate.monitor_status = "planned"
+    result.observation_plan = observation_plan
+    result.monitoring_gaps.extend(observation_plan.gaps)
     if (
         manifest.build.preset != profile.build_preset
         and manifest.build.preset not in profile.compatible_build_presets
@@ -284,10 +349,16 @@ def verify(path: Path, output: Path, catalog: Path, previous: Result | None = No
         "resource-lifecycle": ("valgrind",),
         "path-trace": ("strace", "bwrap"),
     }.get(profile.observer, ())
-    if any(not shutil.which(tool) for tool in required_tools):
+    missing_primary_tools = [tool for tool in required_tools if not shutil.which(tool)]
+    primary_available = not missing_primary_tools
+    if missing_primary_tools and manifest.observation_mode == "explicit":
         result.decision.reason_code = "OBSERVER_UNAVAILABLE"
         save(result)
         return result
+    if missing_primary_tools:
+        result.monitoring_gaps.append(
+            f"Primary observer {profile.observer} unavailable: {', '.join(missing_primary_tools)}"
+        )
     if previous:
         if previous.runtime_platform != result.runtime_platform:
             raise ValueError("runtime platform changed since original verification")
@@ -371,7 +442,7 @@ def verify(path: Path, output: Path, catalog: Path, previous: Result | None = No
         return result
     fixtures = [(Path(f.source), f.destination) for f in manifest.fixtures]
     decisions = []
-    for index in range(manifest.replay.count):
+    for index in range(manifest.replay.count if primary_available else 0):
         run = run_binary(
             build,
             manifest,
@@ -379,7 +450,7 @@ def verify(path: Path, output: Path, catalog: Path, previous: Result | None = No
             fixtures,
             f"run-{index + 1}",
             observer=profile.observer,
-            expected_environment=previous.runs[0].environment if previous else None,
+            expected_environment=_previous_environment(previous, f"run-{index + 1}"),
             stdin_root=directory,
         )
         result.runs.append(run)
@@ -390,34 +461,169 @@ def verify(path: Path, output: Path, catalog: Path, previous: Result | None = No
         decisions.append(judge(profile, run, observations))
         result.run_decisions[run.run_id] = decisions[-1]
         result.replay_signatures.append(signature(observations))
-    result.decision = next(
-        (decision for decision in decisions if decision.status == "ERROR"), decisions[0]
-    )
+    candidate_observer = {
+        "copy": "asan", "array_access": "asan-bounds", "arithmetic": "ubsan",
+        "pointer_access": "asan", "release": "asan", "allocation": "asan",
+        "file_access": "path-trace",
+        "resource_acquire": "resource-lifecycle",
+        "resource_release": "resource-lifecycle",
+    }
+    for candidate in observation_plan.candidates:
+        if candidate_observer.get(candidate.kind) == profile.observer:
+            candidate.monitor_status = "observer_enabled" if primary_available else "unavailable"
+    if not decisions:
+        result.decision = Decision(status="NOT_CONFIRMED", reason_code="OBSERVER_UNAVAILABLE")
+        result.replay_consistent = None
+    else:
+        result.decision = next(
+            (decision for decision in decisions if decision.status == "ERROR"), decisions[0]
+        )
     # A witness is reproducible only if every configured replay independently
     # meets the Profile. One successful run cannot mask a failed replay.
-    if all(decision.status == "CONFIRMED" for decision in decisions):
-        result.decision = decisions[0]
-    elif result.decision.status != "ERROR":
-        result.decision = next(
-            (decision for decision in decisions if decision.status != "CONFIRMED"), decisions[0]
+    if decisions:
+        if all(decision.status == "CONFIRMED" for decision in decisions):
+            result.decision = decisions[0]
+        elif result.decision.status != "ERROR":
+            result.decision = next(
+                (decision for decision in decisions if decision.status != "CONFIRMED"), decisions[0]
+            )
+        result.replay_consistent = len(set(result.replay_signatures)) == 1
+        if previous:
+            result.replay_consistent = (
+                result.replay_consistent
+                and bool(previous.replay_signatures)
+                and result.replay_signatures[0] == previous.replay_signatures[0]
+            )
+        if result.decision.status == "CONFIRMED" and not result.replay_consistent:
+            result.decision = Decision(
+                status="NOT_CONFIRMED",
+                reason_code="REPLAY_DIVERGED",
+                predicates=result.decision.predicates,
+            )
+    if observation_plan.mode == "adaptive" and observation_plan.max_supplemental_runs:
+        result.monitoring_gaps.append(
+            "Coverage mapping was not collected; source candidate execution status remains unknown."
         )
-    result.replay_consistent = len(set(result.replay_signatures)) == 1
-    if previous:
-        result.replay_consistent = (
-            result.replay_consistent
-            and bool(previous.replay_signatures)
-            and result.replay_signatures[0] == previous.replay_signatures[0]
-        )
-    if result.decision.status == "CONFIRMED" and not result.replay_consistent:
-        result.decision = Decision(
-            status="NOT_CONFIRMED",
-            reason_code="REPLAY_DIVERGED",
-            predicates=result.decision.predicates,
-        )
-    if manifest.control:
+        supplemental_count = 0
+        for observer in observation_plan.planned_observers[1:]:
+            if supplemental_count >= observation_plan.max_supplemental_runs:
+                break
+            missing_tools = [tool for tool in _SUPPLEMENTAL_TOOLS[observer] if not shutil.which(tool)]
+            if missing_tools:
+                result.monitoring_gaps.append(
+                    f"Supplemental observer {observer} unavailable: {', '.join(missing_tools)}"
+                )
+                for candidate in observation_plan.candidates:
+                    if candidate_observer.get(candidate.kind) == observer:
+                        candidate.monitor_status = "unavailable"
+                continue
+            supplemental_build = next(
+                (item for item in result.builds if item.build_id == f"supplemental-{observer}"),
+                None,
+            )
+            if supplemental_build is None:
+                supplemental_build = compile_sources(
+                    [Path(source) for source in manifest.sources],
+                    directory / f"build-supplemental-{observer}",
+                    f"supplemental-{observer}",
+                    _SUPPLEMENTAL_BUILDS[observer],
+                    copy_observer=_SUPPLEMENTAL_BUILDS[observer] == "clang-asan-copy-debug",
+                )
+                result.builds.append(supplemental_build)
+            if supplemental_build.exit_code != 0 or not supplemental_build.binary_hash:
+                result.monitoring_gaps.append(f"Supplemental build failed for observer {observer}.")
+                for candidate in observation_plan.candidates:
+                    if candidate_observer.get(candidate.kind) == observer:
+                        candidate.monitor_status = "unavailable"
+                continue
+            supplemental_manifest = manifest.model_copy(deep=True)
+            supplemental_manifest.build = BuildConfig(preset=_SUPPLEMENTAL_BUILDS[observer])
+            run_id = f"supplemental-{observer}-1"
+            supplemental_run = run_binary(
+                supplemental_build,
+                supplemental_manifest,
+                directory / run_id,
+                fixtures,
+                run_id,
+                observer=observer,
+                expected_environment=_previous_environment(previous, run_id),
+                stdin_root=directory,
+                purpose="supplemental",
+                supplemental_reason="AST candidate sites require an observer outside the primary profile.",
+            )
+            result.runs.append(supplemental_run)
+            supplemental_count += 1
+            observations = _parse_observations(
+                supplemental_run, manifest.sources, supplemental_manifest, observer
+            )
+            if manifest.claimed_cwe == "CWE-787":
+                observations = promote_compound_write(observations)
+            result.observations.extend(observations)
+            supplemental_decision = judge(profile, supplemental_run, observations)
+            result.run_decisions[run_id] = supplemental_decision
+            first_signature = signature(observations)
+            result.supplemental_signatures.setdefault(observer, []).append(first_signature)
+            for candidate in observation_plan.candidates:
+                candidate_observer = {
+                    "copy": "asan",
+                    "array_access": "asan-bounds",
+                    "arithmetic": "ubsan",
+                    "pointer_access": "asan",
+                    "release": "asan",
+                    "allocation": "asan",
+                    "file_access": "path-trace",
+                    "resource_acquire": "resource-lifecycle",
+                    "resource_release": "resource-lifecycle",
+                }.get(candidate.kind)
+                if candidate_observer == observer:
+                    candidate.monitor_status = "observer_enabled"
+            if supplemental_decision.status == "CONFIRMED" and supplemental_count < observation_plan.max_supplemental_runs:
+                repeat_id = f"supplemental-{observer}-2"
+                repeat_run = run_binary(
+                    supplemental_build,
+                    supplemental_manifest,
+                    directory / repeat_id,
+                    fixtures,
+                    repeat_id,
+                    observer=observer,
+                    expected_environment=_previous_environment(previous, repeat_id),
+                    stdin_root=directory,
+                    purpose="supplemental_replay",
+                    supplemental_reason="Repeat a supplemental confirmation with the same observer.",
+                )
+                result.runs.append(repeat_run)
+                supplemental_count += 1
+                repeat_observations = _parse_observations(
+                    repeat_run, manifest.sources, supplemental_manifest, observer
+                )
+                if manifest.claimed_cwe == "CWE-787":
+                    repeat_observations = promote_compound_write(repeat_observations)
+                result.observations.extend(repeat_observations)
+                repeat_decision = judge(profile, repeat_run, repeat_observations)
+                result.run_decisions[repeat_id] = repeat_decision
+                repeat_signature = signature(repeat_observations)
+                result.supplemental_signatures.setdefault(observer, []).append(repeat_signature)
+                consistent = (
+                    supplemental_decision.status == "CONFIRMED"
+                    and repeat_decision.status == "CONFIRMED"
+                    and first_signature == repeat_signature
+                )
+                result.supplemental_replay_consistent[observer] = consistent
+                if consistent and result.decision.status != "CONFIRMED":
+                    result.decision = supplemental_decision
+                elif not consistent:
+                    result.monitoring_gaps.append(
+                        f"Supplemental observer {observer} did not reproduce the same confirmation."
+                    )
+    if manifest.control and primary_available:
         control_build: Build
-        if previous and len(previous.builds) > 1:
-            control_build = previous.builds[1]
+        previous_control_build = (
+            next((item for item in previous.builds if item.build_id == "control-build"), None)
+            if previous
+            else None
+        )
+        if previous_control_build:
+            control_build = previous_control_build
         else:
             control_build = compile_sources(
                 [Path(s) for s in manifest.control.sources],
@@ -438,6 +644,7 @@ def verify(path: Path, output: Path, catalog: Path, previous: Result | None = No
                 "control-run",
                 observer=profile.observer,
                 stdin_root=directory,
+                purpose="control",
             )
             result.runs.append(control_run)
             control_observations = _parse_observations(
@@ -461,6 +668,8 @@ def verify(path: Path, output: Path, catalog: Path, previous: Result | None = No
                 control_status = "FAIL: optional control run/output check failed. "
         result.control_result = control_status
         result.control_result += manifest.control.review_note
+    elif manifest.control:
+        result.control_result = "SKIPPED: primary observer unavailable. " + manifest.control.review_note
     result.findings = [
         Finding(mechanism=o.kind, observation_id=o.observation_id, location=o.location)
         for o in result.observations

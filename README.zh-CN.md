@@ -53,6 +53,37 @@ uv run pytest -q
 
 内置 Profile 覆盖 CWE-120、125、190、191、369、415、416、476、772、787 和 22。每个 Profile 声明用于支持结论的观察器和证据条件。CWE-772 包含 POSIX 文件描述符和自定义资源检查；CWE-22 使用 Bubblewrap 与 strace。判定能力和限制见[分析方法](ANALYSIS_METHOD.md)。
 
+CWE-22 在 `observation_mode: adaptive`（默认）下会从文件操作源码中寻找唯一固定目录前缀；找不到时以 `/work` 作为测试边界，并在结果中注明该假设。检测不会自动补造或挂载输入文件。所有 CWE 的自适应观察计划也会记录 AST 候选位点、计划观察器和工具缺口；覆盖率未知会明确标出。设置 `observation_mode: explicit` 可只运行清单指定的 Profile 观察器，`max_supplemental_runs` 默认最多追加三轮观察。
+
+单例清单按原有方式声明源码、CWE、Profile 和输入即可，不必填写 `path_policy` 或为每个位点指定观察器；需要时可覆盖自适应默认值：
+
+```yaml
+sample_id: my-cwe22-case
+sources: [./case.c]
+claimed_cwe: CWE-22
+profile: c.path-traversal@1.0.0
+entry:
+  argv: [user-supplied-path]
+# observation_mode: adaptive  # 默认值
+# max_supplemental_runs: 3    # 默认最多三轮补充观察
+```
+
+批量清单同样使用自动观察；可在全局配置后按样例覆盖：
+
+```yaml
+batch_id: cwe22-corpus
+source_directory: ./samples
+claimed_cwe: CWE-22
+profile: c.path-traversal@1.0.0
+entry:
+  argv: [user-supplied-path]
+overrides:
+  nested-case:
+    max_supplemental_runs: 1
+```
+
+缺少显式边界时采用 `/work` 是检测器的测试约定，不代表宿主机目录或程序自身的安全策略；报告会注明边界来源。补充观察会重复使用原始输入与夹具，不自动生成攻击输入或补建文件。
+
 默认批量清单目录为 `manifests/calibration`，可通过 `cweverify batch --directory PATH` 指定其他目录。运行证据写入 `.cwe-witness/`，该目录已加入 Git 忽略规则。
 
 ## 可选目录元数据

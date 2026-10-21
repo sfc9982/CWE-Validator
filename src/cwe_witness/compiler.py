@@ -51,6 +51,7 @@ def compile_sources(
         timeout=10,
         env=clean_environment(),
         check=True,
+        shell=False,
     ).stdout
     binary = directory / "sample"
     instrumentation = {

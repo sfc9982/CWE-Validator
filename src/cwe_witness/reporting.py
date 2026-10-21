@@ -30,6 +30,44 @@ def markdown(result: Result) -> str:
         "## What was observed",
         "",
     ]
+    if result.manifest.path_policy:
+        policy = result.manifest.path_policy
+        lines[lines.index("## What was observed")] = "## Path boundary evidence"
+        lines.extend(
+            [
+                f"Allowed root: `{policy.allowed_root}` ({policy.boundary_source}).",
+                *[f"- Evidence: {item}" for item in policy.inference_evidence],
+                "",
+                "## What was observed",
+                "",
+            ]
+        )
+    if result.observation_plan:
+        plan = result.observation_plan
+        lines.extend(
+            [
+                "## Observation plan",
+                "",
+                f"Mode: `{plan.mode}`; primary observer: `{plan.primary_observer}`; "
+                f"planned observers: {', '.join(plan.planned_observers)}.",
+                f"Source candidates: {len(plan.candidates)}; supplemental run limit: "
+                f"{plan.max_supplemental_runs}.",
+                "Observer enabled does not prove that a source site executed or that every "
+                "operation at that site was monitored; exact site-level coverage remains unknown.",
+                *[f"- Tool `{tool}`: {version}" for tool, version in plan.tool_versions.items()],
+                *[
+                    f"- {site.file}:{site.line or '?'} `{site.kind}` ({site.monitor_status}); "
+                    f"execution={site.execution_status}: {site.detail}"
+                    for site in plan.candidates
+                ],
+                *[f"- Coverage gap: {gap}" for gap in result.monitoring_gaps],
+                *[
+                    f"- Supplemental `{observer}` replay consistent: {consistent}."
+                    for observer, consistent in result.supplemental_replay_consistent.items()
+                ],
+                "",
+            ]
+        )
     for observation in result.observations:
         evidence_kind = "derived" if "+source-operation" in observation.producer else "direct"
         lines.append(
@@ -43,6 +81,7 @@ def markdown(result: Result) -> str:
             f"descriptor={observation.descriptor}; "
             f"path_raw={observation.path_raw}; path_resolved={observation.path_resolved}; "
             f"allowed_root={observation.path_allowed_root}; "
+            f"boundary_source={observation.path_boundary_source}; "
             f"syscall={observation.path_syscall}; return={observation.path_syscall_return}"
             f"; copy={observation.copy_operation}; target_capacity={observation.target_capacity}; "
             f"actual_write_size={observation.actual_write_size}; "

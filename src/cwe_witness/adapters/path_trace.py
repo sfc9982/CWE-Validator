@@ -7,7 +7,7 @@ from pathlib import Path
 from ..models import Location, Observation, PathPolicy, Run
 
 _SYSCALL = re.compile(
-    r"^\s*(?:\d+\s+)?(?P<name>openat2?|open|creat|rename|renameat2?|unlink|unlinkat|truncate)\((?P<args>.*)\)\s+=\s+(?P<ret>-?\d+)"
+    r"^\s*(?:(?P<pid>\d+)\s+)?(?P<name>openat2?|open|creat|rename|renameat2?|unlink|unlinkat|truncate|chdir|fchdir)\((?P<args>.*)\)\s+=\s+(?P<ret>-?\d+)"
 )
 _FRAME = re.compile(
     r"^\s*>\s+(?P<obj>[^\s(]+)(?:\((?P<symbol>[^)]*)\))?\s+\[0x(?P<addr>[0-9a-fA-F]+)\]"
@@ -82,7 +82,8 @@ def _addr2line(addr2line: str, binary: str, address: str, cache: dict[str, list[
                 capture_output=True,
                 text=True,
                 timeout=5,
-                check=False,
+                check=True,
+                shell=False,
             ).stdout.splitlines()
         except (OSError, subprocess.SubprocessError):
             cache[key] = []
@@ -134,6 +135,7 @@ def parse_path_trace(
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     complete = any(_EXIT.search(line) for line in lines)
     cwd = run.cwd
+    process_cwd: dict[str, str] = {}
     allowed = _policy_path(policy.allowed_root, cwd) if policy else None
     target = _policy_path(policy.outside_target, cwd) if policy else None
     if not allowed:
@@ -154,8 +156,24 @@ def parse_path_trace(
             next_index += 1
         name = match.group("name")
         args = match.group("args")
-        paths = _path_arguments(args, cwd)
+        pid = match.group("pid") or "main"
+        process_cwd.setdefault(pid, cwd)
+        current_cwd = process_cwd[pid]
+        paths = _path_arguments(args, current_cwd)
         result = int(match.group("ret"))
+        if result == 0 and name == "chdir" and paths:
+            process_cwd[pid] = paths[0][1]
+            index = next_index
+            continue
+        if result == 0 and name == "fchdir":
+            descriptor_path = re.search(r"\d+<([^>]+)>", args)
+            if descriptor_path:
+                process_cwd[pid] = descriptor_path.group(1)
+            index = next_index
+            continue
+        if name in {"chdir", "fchdir"}:
+            index = next_index
+            continue
         if not paths:
             index = next_index
             continue
@@ -196,6 +214,7 @@ def parse_path_trace(
                     path_raw=raw,
                     path_resolved=resolved,
                     path_allowed_root=allowed,
+                    path_boundary_source=policy.boundary_source if policy else None,
                     path_syscall=name,
                     path_syscall_return=result,
                     complete=complete

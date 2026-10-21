@@ -155,10 +155,31 @@ class PathMount(Model):
 
 class PathPolicy(Model):
     allowed_root: str
+    boundary_source: Literal["explicit", "source_inference", "working_directory_assumption"] = "explicit"
+    inference_evidence: list[str] = Field(default_factory=list)
     outside_target: str | None = None
     marker: str | None = None
     operation: Literal["read", "write", "any"] = "any"
     mounts: list[PathMount] = Field(default_factory=list)
+
+
+class ObservationCandidate(Model):
+    kind: str
+    file: str
+    line: int | None = None
+    detail: str
+    execution_status: Literal["unknown", "executed", "not_observed"] = "unknown"
+    monitor_status: Literal["planned", "observer_enabled", "unavailable", "unknown"] = "planned"
+
+
+class ObservationPlan(Model):
+    mode: Literal["adaptive", "explicit"] = "adaptive"
+    primary_observer: str
+    planned_observers: list[str] = Field(default_factory=list)
+    max_supplemental_runs: int = 3
+    candidates: list[ObservationCandidate] = Field(default_factory=list)
+    gaps: list[str] = Field(default_factory=list)
+    tool_versions: dict[str, str] = Field(default_factory=dict)
 
 
 class EntryOverride(Model):
@@ -186,6 +207,8 @@ class BatchOverride(Model):
     fixtures: list[Fixture] | None = None
     control: Control | None = None
     path_policy: PathPolicy | None = None
+    observation_mode: Literal["adaptive", "explicit"] | None = None
+    max_supplemental_runs: int | None = Field(default=None, ge=0, le=3)
     allocation_failure: AllocationFailure | None = None
     network_fixture: NetworkFixture | None = None
     profile: str | None = None
@@ -208,6 +231,8 @@ class BatchManifest(Model):
     replay: ReplayConfig = Field(default_factory=ReplayConfig)
     fixtures: list[Fixture] = Field(default_factory=list)
     path_policy: PathPolicy | None = None
+    observation_mode: Literal["adaptive", "explicit"] = "adaptive"
+    max_supplemental_runs: int = Field(default=3, ge=0, le=3)
     allocation_failure: AllocationFailure | None = None
     network_fixture: NetworkFixture | None = None
     function_failure: FunctionFailure | None = None
@@ -229,6 +254,8 @@ class Manifest(Model):
     fixtures: list[Fixture] = Field(default_factory=list)
     control: Control | None = None
     path_policy: PathPolicy | None = None
+    observation_mode: Literal["adaptive", "explicit"] = "adaptive"
+    max_supplemental_runs: int = Field(default=3, ge=0, le=3)
     allocation_failure: AllocationFailure | None = None
     network_fixture: NetworkFixture | None = None
     function_failure: FunctionFailure | None = None
@@ -307,6 +334,8 @@ class Run(Model):
     observer: Literal[
         "asan", "asan-bounds", "valgrind-fd", "ubsan", "path-trace", "resource-lifecycle"
     ] = "asan"
+    purpose: str = "primary"
+    supplemental_reason: str | None = None
     evidence_log: str = ""
     program_argv: list[str] = Field(default_factory=list)
     symbol_binary: str = ""
@@ -367,6 +396,7 @@ class Observation(Model):
     path_raw: str | None = None
     path_resolved: str | None = None
     path_allowed_root: str | None = None
+    path_boundary_source: str | None = None
     path_syscall: str | None = None
     path_syscall_return: int | None = None
 
@@ -414,5 +444,9 @@ class Result(Model):
     replay_signatures: list[str] = Field(default_factory=list)
     replay_consistent: bool | None = None
     run_decisions: dict[str, Decision] = Field(default_factory=dict)
+    observation_plan: ObservationPlan | None = None
+    monitoring_gaps: list[str] = Field(default_factory=list)
+    supplemental_replay_consistent: dict[str, bool] = Field(default_factory=dict)
+    supplemental_signatures: dict[str, list[str]] = Field(default_factory=dict)
     control_result: str = "Optional control not configured."
     artifact_dir: str

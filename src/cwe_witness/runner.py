@@ -105,6 +105,7 @@ def execute(
             stdout=out,
             stderr=err,
             start_new_session=True,
+            shell=False,
         )
         try:
             process.wait(timeout=timeout)
@@ -174,6 +175,8 @@ def run_binary(
     ] = "asan",
     expected_environment: dict[str, str] | None = None,
     stdin_root: Path | None = None,
+    purpose: str = "primary",
+    supplemental_reason: str | None = None,
 ) -> Run:
     directory.mkdir(parents=True)
     work = directory / "work"
@@ -456,6 +459,8 @@ def run_binary(
         stderr=str(work / "stderr.txt"),
         sanitizer_log=str(report) if observer in ("asan", "asan-bounds", "ubsan") else "",
         observer=observer,
+        purpose=purpose,
+        supplemental_reason=supplemental_reason,
         evidence_log=str(report),
         program_argv=program_argv,
         symbol_binary=str(Path(build.binary).resolve()),

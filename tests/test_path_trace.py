@@ -100,3 +100,18 @@ def test_path_trace_resolves_relative_paths_against_decorated_dirfd(tmp_path: Pa
     # The first open stays inside the allowed root once the dirfd is honoured;
     # only the second escapes.
     assert [item.path_resolved for item in observations] == ["/etc/marker.txt"]
+
+
+def test_path_trace_tracks_cwd_changes(tmp_path: Path) -> None:
+    log = tmp_path / "path-trace.log"
+    log.write_text(
+        'chdir("/tmp") = 0\n'
+        'openat(AT_FDCWD, "outside.txt", O_RDONLY) = 3\n'
+        " > /work/sample(CWE22_S011_F001_VUL+0x1) [0x1234]\n"
+        "+++ exited with 0 +++\n",
+        encoding="utf-8",
+    )
+
+    observations = parse_path_trace(_run(log), ["/work/sample.c"], PathPolicy(allowed_root="/work"))
+
+    assert [item.path_resolved for item in observations] == ["/tmp/outside.txt"]

@@ -126,6 +126,16 @@ def build_manifest(
             )
         else:
             path_policy = override.path_policy
+    observation_mode = (
+        override.observation_mode
+        if override and override.observation_mode is not None
+        else batch.observation_mode
+    )
+    max_supplemental_runs = (
+        override.max_supplemental_runs
+        if override and override.max_supplemental_runs is not None
+        else batch.max_supplemental_runs
+    )
     allocation_failure = batch.allocation_failure
     if override and override.allocation_failure is not None:
         allocation_failure = override.allocation_failure
@@ -157,6 +167,8 @@ def build_manifest(
         fixtures=fixtures,
         control=control,
         path_policy=path_policy,
+        observation_mode=observation_mode,
+        max_supplemental_runs=max_supplemental_runs,
         allocation_failure=allocation_failure,
         network_fixture=network_fixture,
         function_failure=function_failure,
