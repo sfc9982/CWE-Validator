@@ -68,6 +68,39 @@ entry:
 # max_supplemental_runs: 3    # 默认最多三轮补充观察
 ```
 
+## 导入固定回归样例
+
+`import-case` 可将人工审核通过的固定 stdin/argv 与合成夹具接入现有验证器。它不会生成或优化输入，也不会更改基准清单的 CWE、Profile、路径边界、控制条件或观察设置。上游工具的成功标记仅作为来源信息保存，不能形成漏洞结论。JavaScript PoC 不能自动转换为 C 输入；只有明确整理成 C 程序可接受的数据后才能导入。
+
+样例描述文件示例：
+
+```yaml
+source_tool: PoCGen
+upstream_version: v4
+case_id: reviewed-case-01
+review_status: approved
+review_note: 人工核对输入与目标 C 程序接口及预期诊断。
+upstream_success_claim: true
+entry:
+  stdin: "5\n"
+  argv: []
+fixtures:
+  - source: fixtures/input.txt
+    destination: input.txt
+```
+
+从现有清单导入并执行：
+
+```bash
+cweverify import-case manifests/base.yaml corpus/case.yaml manifests/imported-case.yaml
+cweverify validate manifests/imported-case.yaml
+cweverify run manifests/imported-case.yaml
+```
+
+导入清单记录来源、审核说明及源码、输入和新增夹具的 SHA-256；校验和重放时哈希不匹配会拒绝继续。条件性补建夹具或故障注入仍需作为独立实验保存，不得据此升级原始环境结论。
+
+PoCGen 与 C 检测器的差异及适用范围见 [PoCGen 接入说明](docs/POCGEN_INTEGRATION.zh-CN.md)。
+
 批量清单同样使用自动观察；可在全局配置后按样例覆盖：
 
 ```yaml

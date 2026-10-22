@@ -124,6 +124,64 @@ class Control(Model):
     expected_stdout: str
 
 
+class ImportedEntry(Model):
+    """Fixed input supplied by a reviewed regression corpus case."""
+
+    stdin: str = ""
+    argv: list[str] = Field(default_factory=list)
+
+
+class ImportedFixture(Model):
+    source: str
+    destination: str
+
+    @field_validator("source")
+    @classmethod
+    def safe_source(cls, value: str) -> str:
+        from pathlib import PurePosixPath, PureWindowsPath
+
+        if (
+            not value
+            or PurePosixPath(value).is_absolute()
+            or PureWindowsPath(value).drive
+            or "\\" in value
+            or ".." in PurePosixPath(value).parts
+        ):
+            raise ValueError("imported fixture source must be a relative path without traversal")
+        return value
+
+    @field_validator("destination")
+    @classmethod
+    def safe_destination(cls, value: str) -> str:
+        return Fixture.safe_destination(value)
+
+
+class ImportedCaseSpec(Model):
+    """Review-gated fixed sample import; it cannot set or override the CWE policy."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    source_tool: str = Field(min_length=1, max_length=100)
+    upstream_version: str = Field(min_length=1, max_length=100)
+    case_id: str = Field(pattern=r"^[a-zA-Z0-9_.-]+$")
+    review_status: Literal["approved"]
+    review_note: str = Field(min_length=10)
+    upstream_success_claim: bool | None = None
+    entry: ImportedEntry = Field(default_factory=ImportedEntry)
+    fixtures: list[ImportedFixture] = Field(default_factory=list)
+
+
+class ImportedCaseProvenance(Model):
+    source_tool: str
+    upstream_version: str
+    case_id: str
+    review_status: Literal["approved"]
+    review_note: str
+    upstream_success_claim: bool | None = None
+    source_sha256: dict[str, str]
+    input_sha256: str
+    fixture_sha256: dict[str, str]
+
+
 class PathMount(Model):
     source: str
     destination: str
@@ -261,6 +319,7 @@ class Manifest(Model):
     function_failure: FunctionFailure | None = None
     null_contract: NullContract | None = None
     resource_lifecycle: ResourceLifecycle | None = None
+    imported_case: ImportedCaseProvenance | None = None
 
     @model_validator(mode="after")
     def paired_null_contract_injection(self) -> "Manifest":

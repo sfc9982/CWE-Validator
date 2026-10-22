@@ -16,6 +16,7 @@ from .manifest import load_manifest
 from .models import BuildConfig, Entry, Manifest, Result
 from .profiles import available_profiles, load_profile
 from .reporting import markdown
+from .sample_import import import_case
 
 app = typer.Typer(no_args_is_help=True, help="Verify C CWE claims using runtime evidence.")
 
@@ -149,6 +150,18 @@ def validate(manifest: Path) -> None:
         typer.echo(f"VALID: {value.sample_id}; profile={'supported' if profile else 'UNSUPPORTED'}")
     except (ValueError, OSError, yaml.YAMLError) as exc:
         typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+
+
+@app.command("import-case")
+def import_reviewed_case(base_manifest: Path, case_spec: Path, output_manifest: Path) -> None:
+    """Import one approved fixed regression case without changing its verifier policy."""
+    try:
+        output = import_case(base_manifest, case_spec, output_manifest)
+        typer.echo(f"Imported reviewed case: {output}")
+        typer.echo("Run cweverify validate on the generated manifest before execution.")
+    except (ValueError, OSError, yaml.YAMLError) as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(2) from exc
 
 

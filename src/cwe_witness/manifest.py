@@ -29,6 +29,10 @@ def load_manifest(path: Path) -> Manifest:
     for fixture in manifest.fixtures:
         if not (path.parent / fixture.source).is_file():
             raise ValueError(f"fixture does not exist: {fixture.source}")
+    if manifest.imported_case is not None:
+        from .sample_import import validate_imported_case
+
+        validate_imported_case(manifest, path)
     return manifest
 
 

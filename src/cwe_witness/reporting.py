@@ -30,6 +30,29 @@ def markdown(result: Result) -> str:
         "## What was observed",
         "",
     ]
+    if result.manifest.imported_case:
+        imported = result.manifest.imported_case
+        lines[lines.index("## What was observed")] = "## Imported regression case"
+        lines.extend(
+            [
+                f"Source: `{imported.source_tool}` version `{imported.upstream_version}`, "
+                f"case `{imported.case_id}`; review status `{imported.review_status}`.",
+                f"Reviewer note: {imported.review_note}",
+                f"Upstream success claim (informational only): `{imported.upstream_success_claim}`.",
+                f"Input SHA-256: `{imported.input_sha256}`",
+                *[
+                    f"- Source `{source}` SHA-256: `{value}`"
+                    for source, value in imported.source_sha256.items()
+                ],
+                *[
+                    f"- Fixture `{destination}` SHA-256: `{value}`"
+                    for destination, value in imported.fixture_sha256.items()
+                ],
+                "",
+                "## What was observed",
+                "",
+            ]
+        )
     if result.manifest.path_policy:
         policy = result.manifest.path_policy
         lines[lines.index("## What was observed")] = "## Path boundary evidence"
